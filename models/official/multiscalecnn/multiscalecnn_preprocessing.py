@@ -87,55 +87,11 @@ def _at_least_x_are_equal(a, b, x):
   return tf.greater_equal(tf.reduce_sum(match), x)
 
 
-def _decode_and_random_crop(image_bytes):
-  """Make a random crop of IMAGE_SIZE."""
-  bbox = tf.constant([0.0, 0.0, 1.0, 1.0], dtype=tf.float32, shape=[1, 1, 4])
-  image = distorted_bounding_box_crop(
-      image_bytes,
-      bbox,
-      min_object_covered=0.1,
-      aspect_ratio_range=(3. / 4, 4. / 3.),
-      area_range=(0.08, 1.0),
-      max_attempts=10,
-      scope=None)
-  original_shape = tf.image.extract_jpeg_shape(image_bytes)
-  bad = _at_least_x_are_equal(original_shape, tf.shape(image), 3)
-
-  image = tf.cond(
-      bad,
-      lambda: _decode_and_center_crop(image_bytes),
-      lambda: tf.image.resize_bicubic([image],  # pylint: disable=g-long-lambda
-                                      [IMAGE_HEIGHT, IMAGE_WIDTH])[0])
-
-  return image
-
-
-def _decode_and_center_crop(image_bytes):
-  """Crops to center of image with padding then scales IMAGE_SIZE."""
-  shape = tf.image.extract_jpeg_shape(image_bytes)
-  image_height = shape[0]
-  image_width = shape[1]
-
-  padded_center_crop_size = tf.cast(
-      ((IMAGE_SIZE / (IMAGE_SIZE + CROP_PADDING)) *
-       tf.cast(tf.minimum(image_height, image_width), tf.float32)),
-      tf.int32)
-
-  offset_height = ((image_height - padded_center_crop_size) + 1) // 2
-  offset_width = ((image_width - padded_center_crop_size) + 1) // 2
-  crop_window = tf.stack([offset_height, offset_width,
-                          padded_center_crop_size, padded_center_crop_size])
-  image = tf.image.decode_and_crop_jpeg(image_bytes, crop_window)
-  image = tf.image.convert_image_dtype(
-      image, dtype=tf.float32)
-
-  image = tf.image.resize_bicubic([image], [IMAGE_HEIGHT, IMAGE_WIDTH])[0]
-
-  return image
-
-
 def _normalize(image):
   """Normalize the image to zero mean and unit variance."""
+  image = tf.decode_raw(features['image_raw'], tf.uint8)
+  image = tf.reshape(image, [height, width, depth])
+  image = tf.cast(image, tf.float32) * (1.0 / 255.0)
   offset = tf.constant(MEAN_RGB, shape=[1, 1, 3])
   image -= offset
 
@@ -159,8 +115,8 @@ def preprocess_for_train(image_bytes):
   Returns:
     A preprocessed image `Tensor`.
   """
-  image = _decode_and_random_crop(image_bytes)
-  image = _normalize(image)
+
+  image = _normalize(image_bytes)
   image = _flip(image)
   image = tf.reshape(image, [IMAGE_HEIGHT, IMAGE_WIDTH, 3])
   return image
@@ -175,8 +131,7 @@ def preprocess_for_eval(image_bytes):
   Returns:
     A preprocessed image `Tensor`.
   """
-  image = _decode_and_center_crop(image_bytes)
-  image = _normalize(image)
+  image = _normalize(image_bytes)
   image = tf.reshape(image, [IMAGE_HEIGHT, IMAGE_WIDTH, 3])
   return image
 

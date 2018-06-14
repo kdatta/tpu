@@ -81,22 +81,19 @@ class HCIInput(object):
     """Parse an ImageNet record from a serialized string Tensor."""
     keys_to_features = {
         'label':
-            tf.FixedLenFeature([], dtype=tf.int32),
+            tf.FixedLenFeature([], dtype=tf.int64),
         'image_raw':
             tf.FixedLenFeature([], dtype=tf.string),
 
     }
     parsed = tf.parse_single_example(value, keys_to_features)
-    image_bytes = tf.reshape(parsed['image/encoded'], shape=[])
-
-    image = self.image_preprocessing_fn(
-        image_bytes=image_bytes,
-        is_training=self.is_training,
-    )
+    image = tf.decode_raw(keys_to_features['image_raw'], tf.uint8)
+    image = tf.reshape(image, [multiscalecnn_preprocessing.IMAGE_HEIGHT, multiscalecnn_preprocessing.IMAGE_WIDTH, 3])
+    image = tf.cast(image, tf.float32) * (1.0 / 255.0)
 
     # Subtract one so that labels are in [0, 1000).
-    label = tf.cast(
-        tf.reshape(parsed['image/class/label'], shape=[]), dtype=tf.int32) - 1
+    label = tf.cast(keys_to_features['label'], tf.int32)
+    label = tf.reshape(label, [1])
 
     if self.use_bfloat16:
       image = tf.cast(image, tf.bfloat16)
@@ -124,7 +121,7 @@ class HCIInput(object):
 
     # Shuffle the filenames to ensure better randomization.
     file_pattern = os.path.join(
-        self.data_dir, 'train-*' if self.is_training else 'validation-*')
+        self.data_dir, '/train-images/*' if self.is_training else '/test-images/*')
     dataset = tf.data.Dataset.list_files(file_pattern, shuffle=self.is_training)
 
     if self.is_training:

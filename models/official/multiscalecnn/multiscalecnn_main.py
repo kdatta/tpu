@@ -376,7 +376,7 @@ def main(unused_argv):
           num_shards=FLAGS.num_cores,
           per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
-  resnet_classifier = tpu_estimator.TPUEstimator(
+  multiscanelcnn_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=multiscalecnn_model_fn,
       config=config,
@@ -404,8 +404,8 @@ def main(unused_argv):
       tf.logging.info('Starting to evaluate.')
       try:
         start_timestamp = time.time()  # This time will include compilation time
-        eval_results = resnet_classifier.evaluate(
-            input_fn=imagenet_eval.input_fn,
+        eval_results = multiscanelcnn_classifier.evaluate(
+            input_fn=hci_eval.input_fn,
             steps=eval_steps,
             checkpoint_path=ckpt)
         elapsed_time = int(time.time() - start_timestamp)
@@ -437,8 +437,7 @@ def main(unused_argv):
 
     start_timestamp = time.time()  # This time will include compilation time
     if FLAGS.mode == 'train':
-      resnet_classifier.train(
-          input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
+      multiscanelcnn_classifier.train(input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
 
     else:
       assert FLAGS.mode == 'train_and_eval'
@@ -447,16 +446,16 @@ def main(unused_argv):
         # At the end of training, a checkpoint will be written to --model_dir.
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
-        resnet_classifier.train(
-            input_fn=imagenet_train.input_fn, max_steps=next_checkpoint)
+        multiscanelcnn_classifier.train(
+            input_fn=hci_train.input_fn, max_steps=next_checkpoint)
         current_step = next_checkpoint
 
         # Evaluate the model on the most recent model in --model_dir.
         # Since evaluation happens in batches of --eval_batch_size, some images
         # may be consistently excluded modulo the batch size.
         tf.logging.info('Starting to evaluate.')
-        eval_results = resnet_classifier.evaluate(
-            input_fn=imagenet_eval.input_fn,
+        eval_results = multiscanelcnn_classifier.evaluate(
+            input_fn=hci_eval.input_fn,
             steps=NUM_EVAL_IMAGES // FLAGS.eval_batch_size)
         tf.logging.info('Eval results: %s' % eval_results)
 
@@ -468,9 +467,9 @@ def main(unused_argv):
       # The guide to serve a exported TensorFlow model is at:
       #    https://www.tensorflow.org/serving/serving_basic
       tf.logging.info('Starting to export model.')
-      resnet_classifier.export_savedmodel(
+      multiscanelcnn_classifier.export_savedmodel(
           export_dir_base=FLAGS.export_dir,
-          serving_input_receiver_fn=imagenet_input.image_serving_input_fn)
+          serving_input_receiver_fn=hci_input.image_serving_input_fn)
 
 if __name__ == '__main__':
   tf.logging.set_verbosity(tf.logging.INFO)
