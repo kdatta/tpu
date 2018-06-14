@@ -29,7 +29,7 @@ import tensorflow as tf
 # For Cloud environment, add parent directory for imports
 sys.path.append(os.path.dirname(os.path.abspath(sys.path[0])))
 
-import imagenet_input    # pylint: disable=g-import-not-at-top
+import hci_input    # pylint: disable=g-import-not-at-top
 import multiscalecnn_main
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
@@ -60,25 +60,25 @@ def main(unused_argv):
 
   resnet_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
-      model_fn=resnet_main.resnet_model_fn,
+      model_fn=multiscalecnn_main.resnet_model_fn,
       config=config,
       train_batch_size=FLAGS.train_batch_size,
       eval_batch_size=FLAGS.eval_batch_size)
 
   # Input pipelines are slightly different (with regards to shuffling and
   # preprocessing) between training and evaluation.
-  imagenet_train = imagenet_input.ImageNetInput(
+  imagenet_train = hci_input.ImageNetInput(
       is_training=True,
       data_dir=FLAGS.data_dir,
       transpose_input=FLAGS.transpose_input)
-  imagenet_eval = imagenet_input.ImageNetInput(
+  imagenet_eval = hci_input.ImageNetInput(
       is_training=False,
       data_dir=FLAGS.data_dir,
       transpose_input=FLAGS.transpose_input)
 
   if FLAGS.mode == 'train':
     current_step = estimator._load_global_step_from_checkpoint_dir(FLAGS.model_dir)  # pylint: disable=protected-access,line-too-long
-    batches_per_epoch = resnet_main.NUM_TRAIN_IMAGES / FLAGS.train_batch_size
+    batches_per_epoch = multiscalecnn_main.NUM_TRAIN_IMAGES / FLAGS.train_batch_size
     tf.logging.info('Training for %d steps (%.2f epochs in total). Current'
                     ' step %d.' % (FLAGS.train_steps,
                                    FLAGS.train_steps / batches_per_epoch,
@@ -102,7 +102,7 @@ def main(unused_argv):
     start_timestamp = tf.gfile.Stat(
         os.path.join(FLAGS.model_dir, 'START')).mtime_nsec
     results = []
-    eval_steps = resnet_main.NUM_EVAL_IMAGES // FLAGS.eval_batch_size
+    eval_steps = multiscalecnn_main.NUM_EVAL_IMAGES // FLAGS.eval_batch_size
 
     ckpt_steps = set()
     all_files = tf.gfile.ListDirectory(FLAGS.model_dir)
@@ -116,7 +116,7 @@ def main(unused_argv):
     for step in ckpt_steps:
       ckpt = os.path.join(FLAGS.model_dir, 'model.ckpt-%d' % step)
 
-      batches_per_epoch = resnet_main.NUM_TRAIN_IMAGES // FLAGS.train_batch_size
+      batches_per_epoch = multiscalecnn_main.NUM_TRAIN_IMAGES // FLAGS.train_batch_size
       current_epoch = step // batches_per_epoch
 
       end_timestamp = tf.gfile.Stat(ckpt + '.index').mtime_nsec

@@ -121,14 +121,15 @@ class HCIInput(object):
 
     # Shuffle the filenames to ensure better randomization.
     file_pattern = os.path.join(
-        self.data_dir, '/train-images/*' if self.is_training else '/test-images/*')
+        self.data_dir, 'train-*' if self.is_training else 'test-*')
     dataset = tf.data.Dataset.list_files(file_pattern, shuffle=self.is_training)
 
     if self.is_training:
       dataset = dataset.repeat()
 
     def fetch_dataset(filename):
-      buffer_size = 8 * 1024 * 1024     # 8 MiB per file
+      # Number of bytes in the read buffer
+      buffer_size = 16 * 1024 * 1280 * 3     # 8 MiB per file
       dataset = tf.data.TFRecordDataset(filename, buffer_size=buffer_size)
       return dataset
 
