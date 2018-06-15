@@ -87,12 +87,12 @@ class HCIInput(object):
 
     }
     parsed = tf.parse_single_example(value, keys_to_features)
-    image = tf.decode_raw(keys_to_features['image_raw'], tf.uint8)
+    image = tf.decode_raw(parsed['image_raw'], tf.uint8) #decode_raw(bytes, out_type, little_endian=True, name=None)
     image = tf.reshape(image, [multiscalecnn_preprocessing.IMAGE_HEIGHT, multiscalecnn_preprocessing.IMAGE_WIDTH, 3])
     image = tf.cast(image, tf.float32) * (1.0 / 255.0)
 
     # Subtract one so that labels are in [0, 1000).
-    label = tf.cast(keys_to_features['label'], tf.int32)
+    label = tf.cast(parsed['label'], tf.int32)
     label = tf.reshape(label, [1])
 
     if self.use_bfloat16:
@@ -143,8 +143,8 @@ class HCIInput(object):
     dataset = dataset.apply(
         tf.contrib.data.map_and_batch(
             self.dataset_parser, batch_size=batch_size,
-            num_parallel_batches=8,    # 8 == num_cores per host
-            drop_remainder=True))
+            num_parallel_batches=8))    # 8 == num_cores per host
+            #drop_remainder=True)) not in tensorflow1.7
 
     # Transpose for performance on TPU
     if self.transpose_input:

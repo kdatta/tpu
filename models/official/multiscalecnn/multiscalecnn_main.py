@@ -28,17 +28,18 @@ import tensorflow as tf
 import hci_input
 import multiscalecnn_model
 from tensorflow.contrib import summary
-from tensorflow.contrib.tpu.python.tpu import bfloat16
+#from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
+import horovod.tensorflow as hvd
 
 FLAGS = flags.FLAGS
 
 flags.DEFINE_bool(
-    'use_tpu', True,
+    'use_tpu', False,
     help=('Use TPU to execute the model for training and evaluation. If'
           ' --use_tpu=false, will use whatever devices are available to'
           ' TensorFlow by default (e.g. CPU and GPU)'))
@@ -133,7 +134,7 @@ flags.DEFINE_string(
 # TODO(chrisying): remove this flag once --transpose_tpu_infeed flag is enabled
 # by default for TPU
 flags.DEFINE_bool(
-    'transpose_input', default=True,
+    'transpose_input', default=False,
     help='Use TPU double transpose optimization')
 
 flags.DEFINE_string(
@@ -144,6 +145,24 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     'precision', 'bfloat16',
     help=('Precision to use; one of: {bfloat16, float32}'))
+
+tf.flags.DEFINE_integer('num_intra_threads', 1,
+                     'Number of threads to use for intra-op parallelism. If '
+                     'set to 0, the system will pick an appropriate number.')
+tf.flags.DEFINE_integer('num_inter_threads', 0,
+                     'Number of threads to use for inter-op parallelism. If '
+                     'set to 0, the system will pick an appropriate number.')
+
+tf.flags.DEFINE_integer('kmp_blocktime', 30,
+                     'The time, in milliseconds, that a thread should wait, '
+                     'after completing the execution of a parallel region, '
+                     'before sleeping')
+tf.flags.DEFINE_string('kmp_affinity', 'granularity=fine,verbose,compact,1,0',
+                    'Restricts execution of certain threads (virtual execution '
+                    'units) to a subset of the physical processing units in a '
+                    'multiprocessor computer.')
+tf.flags.DEFINE_integer('kmp_settings', 1,
+                     'If set to 1, MKL settings will be printed.')
 
 # Dataset constants
 LABEL_CLASSES = 1000
@@ -362,19 +381,28 @@ def multiscalecnn_model_fn(features, labels, mode, params):
 
 
 def main(unused_argv):
-  tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+  if FLAGS.use_tpu:
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
       FLAGS.tpu,
       zone=FLAGS.tpu_zone,
       project=FLAGS.gcp_project)
+  else:
+    tpu_grpc_url = None
+    
+    hvd.init()
+    os.environ['KMP_SETTINGS'] = str(FLAGS.kmp_settings)
+    os.environ['KMP_AFFINITY'] = FLAGS.kmp_affinity
+    if FLAGS.num_intra_threads > 0:
+      os.environ['OMP_NUM_THREADS'] = str(FLAGS.num_intra_threads)
 
   config = tpu_config.RunConfig(
-      cluster=tpu_cluster_resolver,
+      # cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
       save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
       tpu_config=tpu_config.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop,
-          num_shards=FLAGS.num_cores,
-          per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
+          num_shards=FLAGS.num_cores))
+          #per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
   multiscanelcnn_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
