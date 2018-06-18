@@ -29,7 +29,7 @@ import tensorflow as tf
 def preconv_kernel(prefix, inputs, kH, kW, dH, dW, data_format, preconv_counter):
   name = prefix + '_preConv_' + str(preconv_counter)
   with tf.name_scope(name) as scope:
-      if data_format == 'channels_first':
+      if data_format == 'NCHW': #'channels_first':
           ksize = [1, 1, kH, kW]
           strides = [1, 1, dH, dW]
       else:
@@ -47,7 +47,7 @@ def preconv_kernel(prefix, inputs, kH, kW, dH, dW, data_format, preconv_counter)
 def conv_kernel(name_prefix, inputs, nIn, nOut, kH, kW, dH, dW, padType, data_format):
 
   with tf.variable_scope(name_prefix, reuse=tf.AUTO_REUSE):
-    if data_format == 'channels_first':
+    if data_format == 'NCHW': #'channels_first':
       strides = [1, 1, dH, dW]
     else:
       strides = [1, dH, dW, 1]
@@ -74,7 +74,8 @@ def conv_kernel(name_prefix, inputs, nIn, nOut, kH, kW, dH, dW, padType, data_fo
 
 def max_pool_kernel(name, inputs, kH, kW, dH, dW, data_format):
   with tf.name_scope(name) as scope:
-    if data_format == 'channels_first':
+    if data_format == 'NCHW': #'channels_first':
+
       ksize = [1, 1, kH, kW]
       strides = [1, 1, dH, dW]
     else:
@@ -101,11 +102,11 @@ def inner_product(prefix, inputs, nIn, nOut):
     return tf.matmul(inputs, kernel) + biases
 
 
-def pc_par_conv_pool(prefix, inp, kHpc, kWpc, stride, nIn,
+def pc_par_conv_pool(prefix, inp, kHpc, kWpc, dHpc, dWpc, nIn,
                        nOut, kH, kW, dH, dW, kHp, kWp, dHp, dWp, padType, padding, pV,
                        data_format, preconv_counter):
   # Preconv pooling
-  preConv_pool = preconv_kernel(prefix, inp, kHpc, kWpc, stride, data_format, preconv_counter)
+  preConv_pool = preconv_kernel(prefix, inp, kHpc, kWpc, dHpc, dWpc, data_format, preconv_counter)#kHpc, kWpc, stride, data_format, preconv_counter)
   # conv1 + relu1
   conv1 = conv_kernel(prefix + '_conv1', preConv_pool, nIn, nOut, kH, kW, dH, dW, padType, data_format)
   # conv1-1 + relu1-1
@@ -113,7 +114,7 @@ def pc_par_conv_pool(prefix, inp, kHpc, kWpc, stride, nIn,
   # conv1-2 + relu1-2
   conv3 = conv_kernel(prefix + '_conv3', conv2, nOut, nOut, kH, kW, dH, dW, padType, data_format)
   # Pooling
-  pool = max_pool_kernel(prefix + "_maxpool", conv3, kHp, kWp, dHp, dWp)
+  pool = max_pool_kernel(prefix + "_maxpool", conv3, kHp, kWp, dHp, dWp, data_format)
 
   return pool
 
@@ -128,13 +129,12 @@ def conv_pool(inp, nIn, nOut, kH, kW, dH, dW, kHp, kWp, dHp, dWp, padType, paddi
     # conv1-2 + relu1-2
     conv3 = conv_kernel(name + '_conv3', conv2, nOut, nOut, kH, kW, dH, dW, padType, data_format)
     # Pooling
-    pool = max_pool_kernel(name + "_maxpool", conv3, kHp, kWp, dHp, dWp)
+    pool = max_pool_kernel(name + "_maxpool", conv3, kHp, kWp, dHp, dWp, data_format)
 
     return pool
 
 
-def model_generator(block_fn, layers, num_classes,
-                        data_format='channels_first'):
+def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
   """Generator for Multi-scale CNN model
 
   Args:
@@ -153,7 +153,7 @@ def model_generator(block_fn, layers, num_classes,
   """
   def model(inputs, is_training):
     """Creation of the model graph."""
-    if data_format == 'channels_first':
+    if data_format == 'NCHW': #'channels_first':
       images = tf.reshape(inputs, shape=[-1, 3, 1024, 1280])
     else:
       images = tf.reshape(inputs, shape=[-1, 1024, 1280, 3])
@@ -174,7 +174,7 @@ def model_generator(block_fn, layers, num_classes,
     col7 = pc_par_conv_pool('res_64', images, 64, 64, 64, 64, nIn, 64, 5, 5, 1, 1, 1, 1, 1, 1, 'SAME', True, 2, data_format, preconv_counter)
 
     # mergedPool
-    if data_format == 'channels_first':
+    if data_format == 'NCHW': #'channels_first':
       col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 1)
     else:
       col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 3)
@@ -188,6 +188,9 @@ def model_generator(block_fn, layers, num_classes,
     # ip0 + relulp0
     resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 10 * 8])
     ip0 = inner_product('ip0', resh1, 1024 * 10 * 8, 512)
+    #kernel = tf.get_variable('ip3_weight', shape=kernel_shape, initializer=tf.contrib.layers.xavier_initializer()) ####
+    #biases = tf.Variable(tf.zeros(shape=[13], dtype=tf.float32), name='biases', trainable=True) ####
+    #ip3 = tf.matmul(ip0, kernel, transpose_a=False, transpose_b=True) + biases ####
     ip3 = inner_product('ip3', ip0, 512, 13)
 
     return ip3
@@ -196,8 +199,7 @@ def model_generator(block_fn, layers, num_classes,
   return model
 
 
-def mcnn(num_classes, data_format='channels_first'):
+def mcnn(num_classes, data_format='NCHW'): #'channels_first'):
   """Returns the ResNet model for a given size and number of output classes."""
-
-  return model_generator(
-      params['block'], params['layers'], num_classes, data_format)
+  
+  return model_generator(num_classes, data_format)

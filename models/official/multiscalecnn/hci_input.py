@@ -81,9 +81,9 @@ class HCIInput(object):
     """Parse an ImageNet record from a serialized string Tensor."""
     keys_to_features = {
         'label':
-            tf.FixedLenFeature([], dtype=tf.int64),
+            tf.FixedLenFeature([1], dtype=tf.int64),
         'image_raw':
-            tf.FixedLenFeature([], dtype=tf.string),
+            tf.FixedLenFeature([], dtype=tf.string)
 
     }
     parsed = tf.parse_single_example(value, keys_to_features)
@@ -93,7 +93,7 @@ class HCIInput(object):
 
     # Subtract one so that labels are in [0, 1000).
     label = tf.cast(parsed['label'], tf.int32)
-    label = tf.reshape(label, [1])
+    label = tf.reshape(label, []) #[1]
 
     if self.use_bfloat16:
       image = tf.cast(image, tf.bfloat16)
@@ -171,7 +171,8 @@ class HCIInput(object):
     dataset = dataset.map(set_shapes)
 
     # Prefetch overlaps in-feed with training
-    dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+    #dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+    dataset = dataset.prefetch(buffer_size=16*1024*1280*3)
     return dataset
 
   def input_fn_null(self, params):

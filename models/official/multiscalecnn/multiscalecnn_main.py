@@ -125,7 +125,7 @@ flags.DEFINE_integer(
           ' TPU has 4 chips each with 2 cores.'))
 
 flags.DEFINE_string(
-    'data_format', default='channels_last',
+    'data_format', default='NCHW', #channels_last',
     help=('A flag to override the data format used in the model. The value'
           ' is either channels_first or channels_last. To run the network on'
           ' CPU or TPU, channels_last should be used. For GPU, channels_first'
@@ -165,9 +165,9 @@ tf.flags.DEFINE_integer('kmp_settings', 1,
                      'If set to 1, MKL settings will be printed.')
 
 # Dataset constants
-LABEL_CLASSES = 1000
-NUM_TRAIN_IMAGES = 1281167
-NUM_EVAL_IMAGES = 50000
+LABEL_CLASSES = 13
+NUM_TRAIN_IMAGES = 9093#1281167
+NUM_EVAL_IMAGES = 1779#50000
 
 # Learning hyperparameters
 BASE_LEARNING_RATE = 0.1     # base LR when batch size = 256
@@ -221,7 +221,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   if isinstance(features, dict):
     features = features['feature']
 
-  if FLAGS.data_format == 'channels_first':
+  if FLAGS.data_format == 'NCHW': #'channels_first':
     assert not FLAGS.transpose_input    # channels_first only for GPU
     features = tf.transpose(features, [0, 3, 1, 2])
 
@@ -274,6 +274,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   if mode == tf.estimator.ModeKeys.TRAIN:
     # Compute the current epoch and associated learning rate from global_step.
     global_step = tf.train.get_global_step()
+    print('global_step = ', global_step)
     batches_per_epoch = NUM_TRAIN_IMAGES / FLAGS.train_batch_size
     current_epoch = (tf.cast(global_step, tf.float32) /
                      batches_per_epoch)
@@ -404,7 +405,7 @@ def main(unused_argv):
           num_shards=FLAGS.num_cores))
           #per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
-  multiscanelcnn_classifier = tpu_estimator.TPUEstimator(
+  multiscalecnn_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=multiscalecnn_model_fn,
       config=config,
@@ -432,7 +433,7 @@ def main(unused_argv):
       tf.logging.info('Starting to evaluate.')
       try:
         start_timestamp = time.time()  # This time will include compilation time
-        eval_results = multiscanelcnn_classifier.evaluate(
+        eval_results = multiscalecnn_classifier.evaluate(
             input_fn=hci_eval.input_fn,
             steps=eval_steps,
             checkpoint_path=ckpt)
@@ -465,7 +466,7 @@ def main(unused_argv):
 
     start_timestamp = time.time()  # This time will include compilation time
     if FLAGS.mode == 'train':
-      multiscanelcnn_classifier.train(input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
+      multiscalecnn_classifier.train(input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
 
     else:
       assert FLAGS.mode == 'train_and_eval'
@@ -474,7 +475,8 @@ def main(unused_argv):
         # At the end of training, a checkpoint will be written to --model_dir.
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
-        multiscanelcnn_classifier.train(
+	print('next_checkpoint =', next_checkpoint)
+        multiscalecnn_classifier.train(
             input_fn=hci_train.input_fn, max_steps=next_checkpoint)
         current_step = next_checkpoint
 
@@ -482,12 +484,13 @@ def main(unused_argv):
         # Since evaluation happens in batches of --eval_batch_size, some images
         # may be consistently excluded modulo the batch size.
         tf.logging.info('Starting to evaluate.')
-        eval_results = multiscanelcnn_classifier.evaluate(
+        eval_results = multiscalecnn_classifier.evaluate(
             input_fn=hci_eval.input_fn,
             steps=NUM_EVAL_IMAGES // FLAGS.eval_batch_size)
         tf.logging.info('Eval results: %s' % eval_results)
 
     elapsed_time = int(time.time() - start_timestamp)
+    print('current_step =', current_step)
     tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
                     (FLAGS.train_steps, elapsed_time))
 
@@ -495,7 +498,7 @@ def main(unused_argv):
       # The guide to serve a exported TensorFlow model is at:
       #    https://www.tensorflow.org/serving/serving_basic
       tf.logging.info('Starting to export model.')
-      multiscanelcnn_classifier.export_savedmodel(
+      multiscalecnn_classifier.export_savedmodel(
           export_dir_base=FLAGS.export_dir,
           serving_input_receiver_fn=hci_input.image_serving_input_fn)
 
