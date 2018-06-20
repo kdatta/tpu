@@ -4,7 +4,7 @@ python multiscalecnn_main.py \
  --num_intra_threads 10 \
  --num_inter_threads 2 \
  --data_dir /data/02/kdatta1 \
- --model_dir /tmp/mcnn/ \
+ --model_dir /tmp/ \
  --use_tpu=False \
  --kmp_blocktime 1 \
  --kmp_settings 1 \

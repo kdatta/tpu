@@ -153,6 +153,7 @@ def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
   """
   def model(inputs, is_training):
     """Creation of the model graph."""
+    print("Yayyyyyyyyyyyyyyyyyyyyyayayayayaay")
     if data_format == 'NCHW': #'channels_first':
       images = tf.reshape(inputs, shape=[-1, 3, 1024, 1280])
     else:

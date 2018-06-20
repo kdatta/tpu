@@ -157,7 +157,7 @@ tf.flags.DEFINE_integer('kmp_blocktime', 30,
                      'The time, in milliseconds, that a thread should wait, '
                      'after completing the execution of a parallel region, '
                      'before sleeping')
-tf.flags.DEFINE_string('kmp_affinity', 'granularity=fine,verbose,compact,1,0',
+tf.flags.DEFINE_string('kmp_affinity', 'granularity=fine,noverbose,compact,1,0',
                     'Restricts execution of certain threads (virtual execution '
                     'units) to a subset of the physical processing units in a '
                     'multiprocessor computer.')
@@ -167,6 +167,7 @@ tf.flags.DEFINE_integer('kmp_settings', 1,
 # Dataset constants
 LABEL_CLASSES = 13
 NUM_TRAIN_IMAGES = 9093#1281167
+
 NUM_EVAL_IMAGES = 1779#50000
 
 # Learning hyperparameters
@@ -218,6 +219,8 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   Returns:
     A `TPUEstimatorSpec` for the model
   """
+  print("Hoooooooooooooooooooooorayyyyyy")
+
   if isinstance(features, dict):
     features = features['feature']
 
@@ -288,6 +291,8 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       # user, this should look like regular synchronous training.
       optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
+	optimizer = hvd.DistributedOptimizer(optimizer)
+
     # Batch normalization requires UPDATE_OPS to be added as a dependency to
     # the train operation.
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -317,7 +322,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
           List of summary ops to run on the CPU host.
         """
         gs = gs[0]
-        with summary.create_file_writer(FLAGS.model_dir).as_default():
+        with summary.create_file_writer(FLAGS.model_dir if hvd.rank() == 0 else None).as_default():
           with summary.always_record_summaries():
             summary.scalar('loss', loss[0], step=gs)
             summary.scalar('learning_rate', lr[0], step=gs)
@@ -399,18 +404,22 @@ def main(unused_argv):
   config = tpu_config.RunConfig(
       # cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
-      save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
+      save_checkpoints_steps=max(600, FLAGS.iterations_per_loop) if hvd.rank() == 0 else 0,
+	  save_summary_steps=100 if hvd.rank() == 0 else 0,
+	  tf_random_seed=301*hvd.rank(),
       tpu_config=tpu_config.TPUConfig(
-          iterations_per_loop=FLAGS.iterations_per_loop,
-          num_shards=FLAGS.num_cores))
+          iterations_per_loop=FLAGS.iterations_per_loop if hvd.rank() == 0 else 10000000,
+          num_shards=hvd.size()))
           #per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
   multiscalecnn_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=multiscalecnn_model_fn,
       config=config,
-      train_batch_size=FLAGS.train_batch_size,
+      train_batch_size=int(FLAGS.train_batch_size / hvd.size()),
       eval_batch_size=FLAGS.eval_batch_size)
+
+  hvd_bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
 
   assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
       'Invalid value for --precision flag; must be bfloat16 or float32.')
@@ -475,9 +484,9 @@ def main(unused_argv):
         # At the end of training, a checkpoint will be written to --model_dir.
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
-	print('next_checkpoint =', next_checkpoint)
+        print('next_checkpoint =', next_checkpoint)
         multiscalecnn_classifier.train(
-            input_fn=hci_train.input_fn, max_steps=next_checkpoint)
+            input_fn=hci_train.input_fn, max_steps=next_checkpoint, hooks=[hvd_bcast_hook])
         current_step = next_checkpoint
 
         # Evaluate the model on the most recent model in --model_dir.
