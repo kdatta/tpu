@@ -94,7 +94,7 @@ class HCIInput(object):
     # Subtract one so that labels are in [0, 1000).
     label = tf.cast(parsed['label'], tf.int32)
     label = tf.reshape(label, []) #[1]
-
+    print(label)
     if self.use_bfloat16:
       image = tf.cast(image, tf.bfloat16)
 
@@ -130,7 +130,7 @@ class HCIInput(object):
     def fetch_dataset(filename):
       # Number of bytes in the read buffer
       print ("Fetching data...")
-      buffer_size = 16 * 1024 * 1280 * 3     # 16 images per file
+      buffer_size = 256 * 1024 * 1280 * 3     # 16 images per file
       dataset = tf.data.TFRecordDataset(filename, buffer_size=buffer_size)
       return dataset
 
@@ -138,7 +138,7 @@ class HCIInput(object):
     dataset = dataset.apply(
         tf.contrib.data.parallel_interleave(
             fetch_dataset, cycle_length=64, sloppy=True))
-    dataset = dataset.shuffle(1024)
+    dataset = dataset.shuffle(buffer_size=10000)#16)
 
     # Parse, preprocess, and batch the data in parallel
     dataset = dataset.apply(
@@ -173,7 +173,7 @@ class HCIInput(object):
 
     # Prefetch overlaps in-feed with training
     #dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
-    dataset = dataset.prefetch(buffer_size=16*1024*1280*3)
+    dataset = dataset.prefetch(buffer_size=32)#16*1024*1280*3)
     return dataset
 
   def input_fn_null(self, params):
