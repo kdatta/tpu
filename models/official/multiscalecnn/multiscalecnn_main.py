@@ -28,6 +28,7 @@ import tensorflow as tf
 import hci_input
 import multiscalecnn_model
 from tensorflow.contrib import summary
+from tensorflow.python.ops import summary_ops
 #from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
@@ -37,6 +38,7 @@ from tensorflow.python.estimator import estimator
 from tensorflow.python.framework import ops
 
 import horovod.tensorflow as hvd
+import numpy as np
 
 FLAGS = flags.FLAGS
 
@@ -96,10 +98,10 @@ flags.DEFINE_integer(
     'train_batch_size', default=1024, help='Batch size for training.')
 
 flags.DEFINE_integer(
-    'eval_batch_size', default=1024, help='Batch size for evaluation.')
+    'eval_batch_size', default=8, help='Batch size for evaluation.')
 
 flags.DEFINE_integer(
-    'steps_per_eval', default=5000,
+    'steps_per_eval', default=50000,
     help=('Controls how often evaluation is performed. Since evaluation is'
           ' fairly expensive, it is advised to evaluate as infrequently as'
           ' possible (i.e. up to --train_steps, which evaluates the model only'
@@ -173,7 +175,7 @@ NUM_TRAIN_IMAGES = 9856#1281167
 NUM_EVAL_IMAGES = 248#50000
 
 # Learning hyperparameters
-BASE_LEARNING_RATE = 0.1     # base LR when batch size = 256
+BASE_LEARNING_RATE = 0.001     # base LR when batch size = 256
 MOMENTUM = 0.9
 WEIGHT_DECAY = 1e-4
 LR_SCHEDULE = [    # (multiplier, epoch to start) tuples
@@ -223,10 +225,10 @@ def gradual_warmup_then_dec(learning_rate, warmup_steps, end_learning_rate, glob
     dtype = learning_rate.dtype
     global_step = tf.cast(global_step, dtype)
     warmup_steps = tf.cast(warmup_steps, dtype)
-
+    decay_steps = steps - warmup_steps
     lr = tf.cond(tf.less(global_step, warmup_steps),
                         lambda: warmup_decay(learning_rate, global_step, warmup_steps, end_learning_rate),
-                        lambda: tf.train.polynomial_decay(end_learning_rate, global_step-warmup_steps, 0.0001, power=1))
+                        lambda: tf.train.polynomial_decay(end_learning_rate, global_step-warmup_steps,decay_steps, 0.0001, power=1))
     return lr
 
 def multiscalecnn_model_fn(features, labels, mode, params):
@@ -289,12 +291,13 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
   one_hot_labels = tf.one_hot(labels, LABEL_CLASSES)
   cross_entropy = tf.losses.softmax_cross_entropy(
-      logits=logits, onehot_labels=one_hot_labels)
+      logits=logits, onehot_labels=one_hot_labels, label_smoothing=0.1)
 
   # Add weight decay to the loss for non-batch-normalization variables.
-  loss = cross_entropy + WEIGHT_DECAY * tf.add_n(
-      [tf.nn.l2_loss(v) for v in tf.trainable_variables()
-       if 'batch_normalization' not in v.name])
+  #loss = cross_entropy + WEIGHT_DECAY * tf.add_n(
+  #    [tf.nn.l2_loss(v) for v in tf.trainable_variables()
+  #     if 'batch_normalization' not in v.name])
+  loss = cross_entropy
 
   host_call = None
   if mode == tf.estimator.ModeKeys.TRAIN:
@@ -302,9 +305,9 @@ def multiscalecnn_model_fn(features, labels, mode, params):
     global_step = tf.train.get_global_step()
     batches_per_epoch = NUM_TRAIN_IMAGES / FLAGS.train_batch_size
     current_epoch = (tf.cast(global_step, tf.float32) / batches_per_epoch)
-    #learning_rate = learning_rate_schedule(current_epoch)
-    warmup_steps = batches_per_epoch*3 #warmup epoches
-    learning_rate = gradual_warmup_then_dec(0.001, warmup_steps, 0.016, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
+    #learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
+    warmup_steps = batches_per_epoch*2 #warmup epoches
+    learning_rate = gradual_warmup_then_dec(0.008, warmup_steps, 0.032, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
     
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate, momentum=MOMENTUM, use_nesterov=True)
@@ -323,7 +326,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       train_op = optimizer.minimize(loss, global_step)
 
     if not FLAGS.skip_host_call:
-      def host_call_fn(gs, loss, lr, ce):
+      def host_call_fn(gs, loss, lr, ce, one_hot,labels):
         """Training host call. Creates scalar summaries for training metrics.
 
         This function is executed on the CPU and should not directly reference
@@ -350,8 +353,15 @@ def multiscalecnn_model_fn(features, labels, mode, params):
             summary.scalar('loss', loss[0], step=gs)
             summary.scalar('learning_rate', lr[0], step=gs)
             summary.scalar('current_epoch', ce[0], step=gs)
-
-            return summary.all_summary_ops()
+	    #summary.scalar('labels_0', labels[0], step=gs)
+	    #summary.scalar('labels_1', labels[1], step=gs)
+            #summary.scalar('labels_2', labels[2], step=gs)
+	    #summary.scalar('labels_3', labels[3], step=gs)
+            #summary.scalar('labels_4', labels[4], step=gs)
+	    #summary.scalar('labels_5', labels[5], step=gs)
+            #summary.scalar('labels_6', labels[6], step=gs)
+	    #summary.scalar('labels_7', labels[7], step=gs)
+	    return summary.all_summary_ops()
 
       # To log the loss, current learning rate, and epoch for Tensorboard, the
       # summary op needs to be run on the host CPU via host_call. host_call
@@ -363,7 +373,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       lr_t = tf.reshape(learning_rate, [1])
       ce_t = tf.reshape(current_epoch, [1])
 
-      host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t])
+      host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t, one_hot_labels, labels])
 
   else:
     train_op = None
@@ -417,7 +427,8 @@ def main(unused_argv):
       project=FLAGS.gcp_project)
   else:
     tpu_grpc_url = None
-    
+
+    np.random.seed(seed=7)
     hvd.init()
     os.environ['KMP_SETTINGS'] = str(FLAGS.kmp_settings)
     os.environ['KMP_AFFINITY'] = FLAGS.kmp_affinity
@@ -427,10 +438,10 @@ def main(unused_argv):
   config = tpu_config.RunConfig(
       # cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
-      save_checkpoints_steps=max(600, FLAGS.iterations_per_loop) if hvd.rank() == 0 else 0,
-      save_summary_steps=100 if hvd.rank() == 0 else 0,
+      save_checkpoints_steps=60 if hvd.rank() == 0 else 0,
+      save_summary_steps=10 if hvd.rank() == 0 else 0,
       tf_random_seed=301*hvd.rank(),
-      log_step_count_steps=5,
+      # log_step_count_steps=5,
       tpu_config=tpu_config.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop if hvd.rank() == 0 else 10000000,
           num_shards=hvd.size()))
@@ -444,7 +455,7 @@ def main(unused_argv):
       eval_batch_size=FLAGS.eval_batch_size)
 
   hvd_bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
-  examples_sec_hook = tpu_estimator.ExamplesPerSecondHook(int(FLAGS.train_batch_size/hvd.size()),every_n_steps=5)
+  examples_sec_hook = tpu_estimator.ExamplesPerSecondHook(int(FLAGS.train_batch_size/hvd.size()),every_n_steps=10)
 
   assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
       'Invalid value for --precision flag; must be bfloat16 or float32.')
@@ -514,14 +525,13 @@ def main(unused_argv):
         # Evaluate the model on the most recent model in --model_dir.
         # Since evaluation happens in batches of --eval_batch_size, some images
         # may be consistently excluded modulo the batch size.
-        #tf.logging.info('Starting to evaluate.')
-        #eval_results = multiscalecnn_classifier.evaluate(
-        #    input_fn=hci_eval.input_fn,
-        #    steps=NUM_EVAL_IMAGES // FLAGS.eval_batch_size)
-        #tf.logging.info('Eval results: %s' % eval_results)
+        tf.logging.info('Starting to evaluate.')
+        eval_results = multiscalecnn_classifier.evaluate(
+            input_fn=hci_eval.input_fn,
+            steps=NUM_EVAL_IMAGES // FLAGS.eval_batch_size)
+        tf.logging.info('Eval results: %s' % eval_results)
 
     elapsed_time = int(time.time() - start_timestamp)
-    print('current_step =', current_step)
     tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
                     (FLAGS.train_steps, elapsed_time))
 
