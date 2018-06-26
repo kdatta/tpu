@@ -289,16 +289,17 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   batch_size = params['batch_size']   # pylint: disable=unused-variable
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
-  one_hot_labels = tf.one_hot(labels, LABEL_CLASSES)
-  cross_entropy = tf.losses.softmax_cross_entropy(
-      logits=logits, onehot_labels=one_hot_labels, label_smoothing=0.1)
+  #one_hot_labels = tf.one_hot(labels, LABEL_CLASSES)
+  #cross_entropy = tf.losses.softmax_cross_entropy(
+  #    logits=logits, onehot_labels=one_hot_labels, label_smoothing=0.1)
 
   # Add weight decay to the loss for non-batch-normalization variables.
   #loss = cross_entropy + WEIGHT_DECAY * tf.add_n(
   #    [tf.nn.l2_loss(v) for v in tf.trainable_variables()
   #     if 'batch_normalization' not in v.name])
-  loss = cross_entropy
-
+  #loss = cross_entropy
+  loss = multiscalecnn_model.loss(logits=logits, labels=labels)
+  `
   host_call = None
   if mode == tf.estimator.ModeKeys.TRAIN:
     # Compute the current epoch and associated learning rate from global_step.

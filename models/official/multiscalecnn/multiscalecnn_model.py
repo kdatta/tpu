@@ -153,7 +153,6 @@ def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
   """
   def model(inputs, is_training):
     """Creation of the model graph."""
-    print("Yayyyyyyyyyyyyyyyyyyyyyayayayayaay")
     if data_format == 'NCHW': #'channels_first':
       images = tf.reshape(inputs, shape=[-1, 3, 1024, 1280])
     else:
@@ -196,7 +195,6 @@ def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
 
     return ip3
 
-  model.default_image_size = 224
   return model
 
 
@@ -204,3 +202,21 @@ def mcnn(num_classes, data_format='NCHW'): #'channels_first'):
   """Returns the ResNet model for a given size and number of output classes."""
   
   return model_generator(num_classes, data_format)
+
+def loss_function(logits, labels):
+  sparse_labels = tf.reshape(labels, [self.batchsize, 1])
+  indices = tf.reshape(tf.range(self.batchsize), [self.batchsize, 1])
+  concated = tf.concat(axis=1, values=[indices, sparse_labels])
+  num_classes = logits[0].get_shape()[-1].value
+  dense_labels = tf.sparse_to_dense(concated, [self.batchsize, num_classes], 1.0, 0.0)
+  one_hot_labels = tf.cast(dense_labels, logits.dtype)
+  label_smoothing = 0.1
+  smooth_positives = 1.0 - label_smoothing
+  smooth_negatives = label_smoothing / num_classes
+  one_hot_labels = one_hot_labels * smooth_positives + smooth_negatives
+  cross_entropy = tf.losses.sparse_softmax_cross_entropy(logits=logits, labels=labels)
+  weight=1.0
+  weight = tf.convert_to_tensor(weight, dtype=logits.dtype.base_dtype, name='loss_weight')
+  loss = tf.multiply(weight, tf.reduce_mean(cross_entropy), name='value')
+  tf.summary.scalar('loss', loss)
+  return loss
