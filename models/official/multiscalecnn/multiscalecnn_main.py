@@ -36,6 +36,7 @@ from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
 from tensorflow.python.framework import ops
+from tensorflow.python.training.basic_session_run_hooks import ProfilerHook
 
 import horovod.tensorflow as hvd
 import numpy as np
@@ -157,7 +158,7 @@ tf.flags.DEFINE_integer('num_inter_threads', 0,
                      'Number of threads to use for inter-op parallelism. If '
                      'set to 0, the system will pick an appropriate number.')
 
-tf.flags.DEFINE_integer('kmp_blocktime', 30,
+tf.flags.DEFINE_integer('kmp_blocktime', 1,
                      'The time, in milliseconds, that a thread should wait, '
                      'after completing the execution of a parallel region, '
                      'before sleeping')
@@ -167,6 +168,7 @@ tf.flags.DEFINE_string('kmp_affinity', 'granularity=fine,noverbose,compact,1,0',
                     'multiprocessor computer.')
 tf.flags.DEFINE_integer('kmp_settings', 1,
                      'If set to 1, MKL settings will be printed.')
+tf.flags.DEFINE_bool('trace', False, 'Enables chrome tracing')
 
 # Dataset constants
 LABEL_CLASSES = 13
@@ -175,9 +177,9 @@ NUM_TRAIN_IMAGES = 9856#1281167
 NUM_EVAL_IMAGES = 248#50000
 
 # Learning hyperparameters
-BASE_LEARNING_RATE = 0.001     # base LR when batch size = 256
+BASE_LEARNING_RATE = 0.01     # base LR when batch size = 256
 MOMENTUM = 0.9
-WEIGHT_DECAY = 1e-4
+WEIGHT_DECAY = 2e-4
 LR_SCHEDULE = [    # (multiplier, epoch to start) tuples
     (1.0, 5), (0.1, 30), (0.01, 60), (0.001, 80)
 ]
@@ -299,16 +301,16 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   #     if 'batch_normalization' not in v.name])
   #loss = cross_entropy
   loss = multiscalecnn_model.loss(logits=logits, labels=labels)
-  `
+  
   host_call = None
   if mode == tf.estimator.ModeKeys.TRAIN:
     # Compute the current epoch and associated learning rate from global_step.
     global_step = tf.train.get_global_step()
     batches_per_epoch = NUM_TRAIN_IMAGES / FLAGS.train_batch_size
     current_epoch = (tf.cast(global_step, tf.float32) / batches_per_epoch)
-    #learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
+    learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
     warmup_steps = batches_per_epoch*2 #warmup epoches
-    learning_rate = gradual_warmup_then_dec(0.008, warmup_steps, 0.032, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
+    #learning_rate = gradual_warmup_then_dec(0.008, warmup_steps, 0.032, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
     
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate, momentum=MOMENTUM, use_nesterov=True)
@@ -317,7 +319,6 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       # handles synchronization details between different TPU cores. To the
       # user, this should look like regular synchronous training.
       optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
-
     optimizer = hvd.DistributedOptimizer(optimizer)
 
     # Batch normalization requires UPDATE_OPS to be added as a dependency to
@@ -327,7 +328,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       train_op = optimizer.minimize(loss, global_step)
 
     if not FLAGS.skip_host_call:
-      def host_call_fn(gs, loss, lr, ce, one_hot,labels):
+      def host_call_fn(gs, loss, lr, ce):#, one_hot,labels):
         """Training host call. Creates scalar summaries for training metrics.
 
         This function is executed on the CPU and should not directly reference
@@ -374,7 +375,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
       lr_t = tf.reshape(learning_rate, [1])
       ce_t = tf.reshape(current_epoch, [1])
 
-      host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t, one_hot_labels, labels])
+      host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t])#, one_hot_labels, labels])
 
   else:
     train_op = None
@@ -433,15 +434,18 @@ def main(unused_argv):
     hvd.init()
     os.environ['KMP_SETTINGS'] = str(FLAGS.kmp_settings)
     os.environ['KMP_AFFINITY'] = FLAGS.kmp_affinity
+    os.environ['KMP_BLOCKTIME'] = str(FLAGS.kmp_blocktime)
     if FLAGS.num_intra_threads > 0:
       os.environ['OMP_NUM_THREADS'] = str(FLAGS.num_intra_threads)
 
   config = tpu_config.RunConfig(
       # cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
-      save_checkpoints_steps=60 if hvd.rank() == 0 else 0,
-      save_summary_steps=10 if hvd.rank() == 0 else 0,
+      save_checkpoints_steps=600 if hvd.rank() == 0 else 0,
+      save_summary_steps=100 if hvd.rank() == 0 else 0,
       tf_random_seed=301*hvd.rank(),
+      session_config=tf.ConfigProto(
+          allow_soft_placement=True, log_device_placement=False, intra_op_parallelism_threads= FLAGS.num_intra_threads, inter_op_parallelism_threads = FLAGS.num_inter_threads),
       # log_step_count_steps=5,
       tpu_config=tpu_config.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop if hvd.rank() == 0 else 10000000,
@@ -456,7 +460,9 @@ def main(unused_argv):
       eval_batch_size=FLAGS.eval_batch_size)
 
   hvd_bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
-  examples_sec_hook = tpu_estimator.ExamplesPerSecondHook(int(FLAGS.train_batch_size/hvd.size()),every_n_steps=10)
+  examples_sec_hook = tpu_estimator.ExamplesPerSecondHook(int(FLAGS.train_batch_size/hvd.size()),every_n_steps=1)
+  if FLAGS.trace == True:
+    profiler_hook = ProfilerHook(save_steps=1, output_dir=FLAGS.model_dir)
 
   assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
       'Invalid value for --precision flag; must be bfloat16 or float32.')
@@ -520,9 +526,13 @@ def main(unused_argv):
         # At the end of training, a checkpoint will be written to --model_dir.
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
-        multiscalecnn_classifier.train(
-            input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
-        current_step = next_checkpoint
+        if FLAGS.trace == True:
+	  multiscalecnn_classifier.train(
+              input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook, profiler_hook])
+        else:
+	  multiscalecnn_classifier.train(
+              input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
+	current_step = next_checkpoint
         # Evaluate the model on the most recent model in --model_dir.
         # Since evaluation happens in batches of --eval_batch_size, some images
         # may be consistently excluded modulo the batch size.

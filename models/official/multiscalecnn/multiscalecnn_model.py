@@ -203,12 +203,12 @@ def mcnn(num_classes, data_format='NCHW'): #'channels_first'):
   
   return model_generator(num_classes, data_format)
 
-def loss_function(logits, labels):
-  sparse_labels = tf.reshape(labels, [self.batchsize, 1])
-  indices = tf.reshape(tf.range(self.batchsize), [self.batchsize, 1])
+def loss(logits, labels):
+  sparse_labels = tf.reshape(labels, [8, 1])
+  indices = tf.reshape(tf.range(8), [8, 1])
   concated = tf.concat(axis=1, values=[indices, sparse_labels])
   num_classes = logits[0].get_shape()[-1].value
-  dense_labels = tf.sparse_to_dense(concated, [self.batchsize, num_classes], 1.0, 0.0)
+  dense_labels = tf.sparse_to_dense(concated, [8, num_classes], 1.0, 0.0)
   one_hot_labels = tf.cast(dense_labels, logits.dtype)
   label_smoothing = 0.1
   smooth_positives = 1.0 - label_smoothing

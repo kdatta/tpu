@@ -130,21 +130,21 @@ class HCIInput(object):
     def fetch_dataset(filename):
       # Number of bytes in the read buffer
       print ("Fetching data...")
-      buffer_size = 32 * 1024 * 1280 * 3     # 16 images per file
+      buffer_size = 256 * 1024 * 1024      # 16 images per file
       dataset = tf.data.TFRecordDataset(filename, buffer_size=buffer_size)
       return dataset
 
     # Read the data from disk in parallel
     dataset = dataset.apply(
         tf.contrib.data.parallel_interleave(
-            fetch_dataset, cycle_length=8, sloppy=True))
-    dataset = dataset.shuffle(buffer_size=32)#10000)#16)
+            fetch_dataset, cycle_length=8, block_length=16, sloppy=False))
+    dataset = dataset.shuffle(buffer_size=16)#10000)#16)
 
     # Parse, preprocess, and batch the data in parallel
     dataset = dataset.apply(
         tf.contrib.data.map_and_batch(
             self.dataset_parser, batch_size=batch_size,
-            num_parallel_batches=4))    # 8 == num_cores per host
+            num_parallel_batches=10))    # 8 == num_cores per host
             #drop_remainder=True)) not in tensorflow1.7
 
     # Transpose for performance on TPU
@@ -173,7 +173,7 @@ class HCIInput(object):
 
     # Prefetch overlaps in-feed with training
     #dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
-    dataset = dataset.prefetch(buffer_size=32)#16*1024*1280*3)
+    #dataset = dataset.prefetch(buffer_size=32)#16*1024*1280*3)
     return dataset
 
   def input_fn_null(self, params):
