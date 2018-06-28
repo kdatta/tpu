@@ -124,8 +124,6 @@ class HCIInput(object):
         self.data_dir, 'slice-*' if self.is_training else 'test-*')
     dataset = tf.data.Dataset.list_files(file_pattern, shuffle=self.is_training)
 
-    if self.is_training:
-      dataset = dataset.repeat()
 
     def fetch_dataset(filename):
       # Number of bytes in the read buffer
@@ -137,8 +135,12 @@ class HCIInput(object):
     # Read the data from disk in parallel
     dataset = dataset.apply(
         tf.contrib.data.parallel_interleave(
-            fetch_dataset, cycle_length=8, block_length=16, sloppy=False))
-    dataset = dataset.shuffle(buffer_size=16)#10000)#16)
+            fetch_dataset, cycle_length=20, block_length=16, sloppy=True))
+
+    if self.is_training:
+      dataset = dataset.shuffle(buffer_size=40).repeat()#10000)#16)
+    else:
+      dataset = dataset.shuffle(buffer_size=40)
 
     # Parse, preprocess, and batch the data in parallel
     dataset = dataset.apply(
@@ -173,7 +175,7 @@ class HCIInput(object):
 
     # Prefetch overlaps in-feed with training
     #dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
-    #dataset = dataset.prefetch(buffer_size=32)#16*1024*1280*3)
+    #dataset = dataset.prefetch(buffer_size=8)#16*1024*1280*3)
     return dataset
 
   def input_fn_null(self, params):

@@ -179,7 +179,7 @@ NUM_EVAL_IMAGES = 248#50000
 # Learning hyperparameters
 BASE_LEARNING_RATE = 0.01     # base LR when batch size = 256
 MOMENTUM = 0.9
-WEIGHT_DECAY = 2e-4
+WEIGHT_DECAY = 5e-5
 LR_SCHEDULE = [    # (multiplier, epoch to start) tuples
     (1.0, 5), (0.1, 30), (0.01, 60), (0.001, 80)
 ]
@@ -291,16 +291,16 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   batch_size = params['batch_size']   # pylint: disable=unused-variable
 
   # Calculate loss, which includes softmax cross entropy and L2 regularization.
-  #one_hot_labels = tf.one_hot(labels, LABEL_CLASSES)
-  #cross_entropy = tf.losses.softmax_cross_entropy(
-  #    logits=logits, onehot_labels=one_hot_labels, label_smoothing=0.1)
+  one_hot_labels = tf.one_hot(labels, LABEL_CLASSES)
+  cross_entropy = tf.losses.softmax_cross_entropy(
+      logits=logits, onehot_labels=one_hot_labels, label_smoothing=0.1)
 
   # Add weight decay to the loss for non-batch-normalization variables.
-  #loss = cross_entropy + WEIGHT_DECAY * tf.add_n(
-  #    [tf.nn.l2_loss(v) for v in tf.trainable_variables()
-  #     if 'batch_normalization' not in v.name])
+  loss = cross_entropy + WEIGHT_DECAY * tf.add_n(
+      [tf.nn.l2_loss(v) for v in tf.trainable_variables()
+       if 'batch_normalization' not in v.name])
   #loss = cross_entropy
-  loss = multiscalecnn_model.loss(logits=logits, labels=labels)
+  #loss = multiscalecnn_model.loss(logits=logits, labels=labels)
   
   host_call = None
   if mode == tf.estimator.ModeKeys.TRAIN:
@@ -308,9 +308,9 @@ def multiscalecnn_model_fn(features, labels, mode, params):
     global_step = tf.train.get_global_step()
     batches_per_epoch = NUM_TRAIN_IMAGES / FLAGS.train_batch_size
     current_epoch = (tf.cast(global_step, tf.float32) / batches_per_epoch)
-    learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
-    warmup_steps = batches_per_epoch*2 #warmup epoches
-    #learning_rate = gradual_warmup_then_dec(0.008, warmup_steps, 0.032, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
+    #learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
+    warmup_steps = batches_per_epoch*5 #warmup epoches
+    learning_rate = gradual_warmup_then_dec(0.1, warmup_steps, 3.2, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
     
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate, momentum=MOMENTUM, use_nesterov=True)

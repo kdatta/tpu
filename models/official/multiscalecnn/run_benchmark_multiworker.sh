@@ -7,5 +7,5 @@ OMP_NUM_THREADS=10 mpirun -np 4 --map-by socket -x OMP_NUM_THREADS numactl -l py
  --model_dir /tmp/test \
  --use_tpu=False \
  --precision float32 \
- --mode train_and_eval \
- --trace
+ --mode train_and_eval 
+# --trace
