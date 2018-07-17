@@ -310,7 +310,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
     current_epoch = (tf.cast(global_step, tf.float32) / batches_per_epoch)
     #learning_rate = BASE_LEARNING_RATE #learning_rate_schedule(current_epoch)
     warmup_steps = batches_per_epoch*5 #warmup epoches
-    learning_rate = gradual_warmup_then_dec(0.1, warmup_steps, 3.2, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
+    learning_rate = gradual_warmup_then_dec(0.001, warmup_steps, 0.008, global_step, FLAGS.train_steps, name="gradual_warmup_then_dec") 
     
     optimizer = tf.train.MomentumOptimizer(
         learning_rate=learning_rate, momentum=MOMENTUM, use_nesterov=True)
@@ -431,6 +431,7 @@ def main(unused_argv):
     tpu_grpc_url = None
 
     np.random.seed(seed=7)
+    tf.set_random_seed(0)
     hvd.init()
     os.environ['KMP_SETTINGS'] = str(FLAGS.kmp_settings)
     os.environ['KMP_AFFINITY'] = FLAGS.kmp_affinity
@@ -519,6 +520,14 @@ def main(unused_argv):
     start_timestamp = time.time()  # This time will include compilation time
     if FLAGS.mode == 'train':
       multiscalecnn_classifier.train(input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
+      next_checkpoint = min(current_step + FLAGS.steps_per_eval,
+                            FLAGS.train_steps)
+      if FLAGS.trace == True:
+        multiscalecnn_classifier.train(
+            input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook, profiler_hook])
+      else:
+        multiscalecnn_classifier.train(
+            input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
     else:
       assert FLAGS.mode == 'train_and_eval'
       while current_step < FLAGS.train_steps:

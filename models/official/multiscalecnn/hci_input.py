@@ -70,7 +70,7 @@ class HCIInput(object):
     transpose_input: 'bool' for whether to use the double transpose trick
   """
 
-  def __init__(self, is_training, data_dir, use_bfloat16, transpose_input=True):
+  def __init__(self, is_training, data_dir, use_bfloat16, transpose_input=True, num_cores=8):
     self.image_preprocessing_fn = multiscalecnn_preprocessing.preprocess_image
     self.is_training = is_training
     self.use_bfloat16 = use_bfloat16
@@ -94,7 +94,6 @@ class HCIInput(object):
     # Subtract one so that labels are in [0, 1000).
     label = tf.cast(parsed['label'], tf.int32)
     label = tf.reshape(label, []) #[1]
-    print(label)
     if self.use_bfloat16:
       image = tf.cast(image, tf.bfloat16)
 
@@ -127,8 +126,8 @@ class HCIInput(object):
 
     def fetch_dataset(filename):
       # Number of bytes in the read buffer
-      print ("Fetching data...")
-      buffer_size = 256 * 1024 * 1024      # 16 images per file
+      # print ("Fetching data...")
+      buffer_size = 8 * 1024 * 1024      # 16 images per file
       dataset = tf.data.TFRecordDataset(filename, buffer_size=buffer_size)
       return dataset
 
@@ -138,22 +137,22 @@ class HCIInput(object):
             fetch_dataset, cycle_length=20, block_length=16, sloppy=True))
 
     if self.is_training:
-      dataset = dataset.shuffle(buffer_size=40).repeat()#10000)#16)
+      dataset = dataset.shuffle(buffer_size=351, seed=0).repeat()#10000)#16)
     else:
-      dataset = dataset.shuffle(buffer_size=40)
+      dataset = dataset.shuffle(buffer_size=351, seed=0)
 
     # Parse, preprocess, and batch the data in parallel
     dataset = dataset.apply(
         tf.contrib.data.map_and_batch(
             self.dataset_parser, batch_size=batch_size,
-            num_parallel_batches=10))    # 8 == num_cores per host
+            num_parallel_batches=10))#10    # 8 == num_cores per host
             #drop_remainder=True)) not in tensorflow1.7
 
     # Transpose for performance on TPU
     if self.transpose_input:
       dataset = dataset.map(
           lambda images, labels: (tf.transpose(images, [1, 2, 3, 0]), labels),
-          num_parallel_calls=8)
+          num_parallel_calls=64)
 
     def set_shapes(images, labels):
       """Statically set the batch_size dimension."""
@@ -189,7 +188,7 @@ class HCIInput(object):
 
     dataset = dataset.map(
         lambda images, labels: (tf.transpose(images, [1, 2, 3, 0]), labels),
-        num_parallel_calls=8)
+        num_parallel_calls=64)
 
     dataset = dataset.prefetch(32)     # Prefetch overlaps in-feed with training
     tf.logging.info('Input dataset: %s', str(dataset))

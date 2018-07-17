@@ -154,12 +154,18 @@ def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
   def model(inputs, is_training):
     """Creation of the model graph."""
     if data_format == 'NCHW': #'channels_first':
-      images = tf.reshape(inputs, shape=[-1, 3, 1024, 1280])
+      images = tf.reshape(inputs, shape=[-1, 3, 724, 724])#1024, 1280])
     else:
-      images = tf.reshape(inputs, shape=[-1, 1024, 1280, 3])
+      images = tf.reshape(inputs, shape=[-1, 724, 724, 3])#1024, 1280, 3])
 
     nIn = 3  # Number of input channels
     preconv_counter = 1
+
+    if data_format == 'NCHW':
+      images = tf.pad(images, [[0, 0], [0, 0], [22, 22], [22, 22]], "CONSTANT") #724*724 to 768*768
+    else:
+      images = tf.pad(images, [[0, 0], [22, 22], [22, 22], [0, 0]], "CONSTANT")
+
     col1 = conv_pool(images, nIn, 16, 5, 5, 1, 1, 64, 64, 64, 64, 'SAME', True, 2, data_format)
     col2 = pc_par_conv_pool('res_2', images, 2, 2, 2, 2, nIn, 16, 5, 5, 1, 1, 32, 32, 32, 32, 'SAME', True, 2, data_format, preconv_counter)
     preconv_counter += 1
@@ -181,13 +187,14 @@ def model_generator(num_classes,data_format='NCHW'): #'channels_first'):
 
     # mergedSummaryConv + relu-mergedSummaryConv
     mergedSummaryConv = conv_kernel('mergedSummaryConv', col_merge, 208, 1024, 1, 1, 1, 1, 'SAME', data_format=data_format)
+    #mergedSummaryConv = conv_kernel('mergedSummaryConv', col1, 16, 1024, 1, 1, 1, 1, 'SAME', data_format=data_format)
 
     # poolMergedSummaryConv
     poolMergedSummaryConv = max_pool_kernel('mergedSummaryConv', mergedSummaryConv, 2, 2, 2, 2, data_format=data_format)
 
     # ip0 + relulp0
-    resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 10 * 8])
-    ip0 = inner_product('ip0', resh1, 1024 * 10 * 8, 512)
+    resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 6 * 6])#10 * 8])
+    ip0 = inner_product('ip0', resh1, 1024 * 6 * 6, 512)#10 * 8, 512)
     #kernel = tf.get_variable('ip3_weight', shape=kernel_shape, initializer=tf.contrib.layers.xavier_initializer()) ####
     #biases = tf.Variable(tf.zeros(shape=[13], dtype=tf.float32), name='biases', trainable=True) ####
     #ip3 = tf.matmul(ip0, kernel, transpose_a=False, transpose_b=True) + biases ####

@@ -19,8 +19,8 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-IMAGE_HEIGHT = 1024
-IMAGE_WIDTH = 1280
+IMAGE_HEIGHT = 724#1024 #724
+IMAGE_WIDTH = 724#1280 #724
 CROP_PADDING = 32
 MEAN_RGB = [0.485, 0.456, 0.406]
 STDDEV_RGB = [0.229, 0.224, 0.225]
