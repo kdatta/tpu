@@ -266,7 +266,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
     network = multiscalecnn_model.mcnn(
         num_classes=LABEL_CLASSES,
         data_format=FLAGS.data_format,
-        image_shape=[params['image_height'], params['image_width']])
+        image_shape=[FLAGS.image_height, FLAGS.image_width])
     return network(
         inputs=features, is_training=(mode == tf.estimator.ModeKeys.TRAIN))
 
@@ -449,7 +449,9 @@ def main(unused_argv):
       save_summary_steps=100 if hvd.rank() == 0 else 0,
       tf_random_seed=301*hvd.rank(),
       session_config=tf.ConfigProto(
-          allow_soft_placement=True, log_device_placement=False, intra_op_parallelism_threads= FLAGS.num_intra_threads, inter_op_parallelism_threads = FLAGS.num_inter_threads),
+          allow_soft_placement=True, log_device_placement=False,
+          intra_op_parallelism_threads= FLAGS.num_intra_threads,
+          inter_op_parallelism_threads = FLAGS.num_inter_threads),
       # log_step_count_steps=5,
       tpu_config=tpu_config.TPUConfig(
           iterations_per_loop=FLAGS.iterations_per_loop if hvd.rank() == 0 else 10000000,
