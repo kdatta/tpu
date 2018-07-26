@@ -70,12 +70,13 @@ class HCIInput(object):
     transpose_input: 'bool' for whether to use the double transpose trick
   """
 
-  def __init__(self, is_training, data_dir, use_bfloat16, transpose_input=True, num_cores=8):
+  def __init__(self, is_training, data_dir, use_bfloat16, image_shape, transpose_input=True):
     self.image_preprocessing_fn = multiscalecnn_preprocessing.preprocess_image
     self.is_training = is_training
     self.use_bfloat16 = use_bfloat16
     self.data_dir = data_dir
     self.transpose_input = transpose_input
+    self.image_shape = image_shape
 
   def dataset_parser(self, value):
     """Parse an ImageNet record from a serialized string Tensor."""
@@ -88,7 +89,7 @@ class HCIInput(object):
     }
     parsed = tf.parse_single_example(value, keys_to_features)
     image = tf.decode_raw(parsed['image_raw'], tf.uint8) #decode_raw(bytes, out_type, little_endian=True, name=None)
-    image = tf.reshape(image, [multiscalecnn_preprocessing.IMAGE_HEIGHT, multiscalecnn_preprocessing.IMAGE_WIDTH, 3])
+    image = tf.reshape(image, [self.image_shape[0], self.image_shape[1], 3])
     image = tf.cast(image, tf.float32) * (1.0 / 255.0)
 
     # Subtract one so that labels are in [0, 1000).
@@ -195,6 +196,6 @@ class HCIInput(object):
     return dataset
 
   def _get_null_input(self, _):
-    null_image = tf.zeros([224, 224, 3], tf.bfloat16
+    null_image = tf.zeros([self.image_shape[0], self.image_shape[1], 3], tf.bfloat16
                           if self.use_bfloat16 else tf.float32)
     return (null_image, tf.constant(0, tf.int32))

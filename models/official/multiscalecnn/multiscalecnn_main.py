@@ -169,6 +169,8 @@ tf.flags.DEFINE_string('kmp_affinity', 'granularity=fine,noverbose,compact,1,0',
 tf.flags.DEFINE_integer('kmp_settings', 1,
                      'If set to 1, MKL settings will be printed.')
 tf.flags.DEFINE_bool('trace', False, 'Enables chrome tracing')
+tf.flags.DEFINE_integer('image_height', 1024, 'Height of input images')
+tf.flags.DEFINE_integer('image_width', 1280, 'Width of input images')
 
 # Dataset constants
 LABEL_CLASSES = 13
@@ -263,7 +265,8 @@ def multiscalecnn_model_fn(features, labels, mode, params):
   def build_network():
     network = multiscalecnn_model.mcnn(
         num_classes=LABEL_CLASSES,
-        data_format=FLAGS.data_format)
+        data_format=FLAGS.data_format,
+        image_shape=[params['image_height'], params['image_width']])
     return network(
         inputs=features, is_training=(mode == tf.estimator.ModeKeys.TRAIN))
 
@@ -355,7 +358,7 @@ def multiscalecnn_model_fn(features, labels, mode, params):
             summary.scalar('loss', loss[0], step=gs)
             summary.scalar('learning_rate', lr[0], step=gs)
             summary.scalar('current_epoch', ce[0], step=gs)
-	    #summary.scalar('labels_0', labels[0], step=gs)
+        #summary.scalar('labels_0', labels[0], step=gs)
 	    #summary.scalar('labels_1', labels[1], step=gs)
             #summary.scalar('labels_2', labels[2], step=gs)
 	    #summary.scalar('labels_3', labels[3], step=gs)
@@ -453,6 +456,10 @@ def main(unused_argv):
           num_shards=hvd.size()))
           #per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
+  tf.logging.info("num_inter_threads: " + FLAGS.num_inter_threads)
+  tf.logging.info("num_intra_threads: " + FLAGS.num_intra_threads)
+
+
   multiscalecnn_classifier = tpu_estimator.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=multiscalecnn_model_fn,
@@ -476,7 +483,8 @@ def main(unused_argv):
       is_training=is_training,
       data_dir=FLAGS.data_dir,
       transpose_input=FLAGS.transpose_input,
-      use_bfloat16=use_bfloat16) for is_training in [True, False]]
+      use_bfloat16=use_bfloat16,
+      image_shape=[FLAGS.image_height, FLAGS.image_width]) for is_training in [True, False]]
 
   if FLAGS.mode == 'eval':
     eval_steps = NUM_EVAL_IMAGES // FLAGS.eval_batch_size
@@ -536,10 +544,10 @@ def main(unused_argv):
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
         if FLAGS.trace == True:
-	  multiscalecnn_classifier.train(
+          multiscalecnn_classifier.train(
               input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook, profiler_hook])
         else:
-	  multiscalecnn_classifier.train(
+          multiscalecnn_classifier.train(
               input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
 	current_step = next_checkpoint
         # Evaluate the model on the most recent model in --model_dir.

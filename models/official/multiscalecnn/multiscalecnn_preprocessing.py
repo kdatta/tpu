@@ -119,7 +119,8 @@ def preprocess_for_train(image_bytes):
   #image = _normalize(image_bytes)
   #image = _flip(image)
   #image = tf.reshape(image, [IMAGE_HEIGHT, IMAGE_WIDTH, 3])
-  return image
+  pass
+  #return image
 
 
 def preprocess_for_eval(image_bytes):
