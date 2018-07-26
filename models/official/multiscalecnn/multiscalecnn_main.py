@@ -456,8 +456,8 @@ def main(unused_argv):
           num_shards=hvd.size()))
           #per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
-  tf.logging.info("num_inter_threads: " + FLAGS.num_inter_threads)
-  tf.logging.info("num_intra_threads: " + FLAGS.num_intra_threads)
+  tf.logging.info("num_inter_threads: " + str(FLAGS.num_inter_threads))
+  tf.logging.info("num_intra_threads: " + str(FLAGS.num_intra_threads))
 
 
   multiscalecnn_classifier = tpu_estimator.TPUEstimator(
