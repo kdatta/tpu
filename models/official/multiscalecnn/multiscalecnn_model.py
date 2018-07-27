@@ -138,11 +138,6 @@ def model_generator(num_classes, image_shape, data_format='NCHW'): #'channels_fi
   """Generator for Multi-scale CNN model
 
   Args:
-    block_fn: `function` for the block to use within the model. Either
-        `residual_block` or `bottleneck_block`.
-    layers: list of 4 `int`s denoting the number of blocks to include in each
-      of the 4 block groups. Each group consists of blocks that take inputs of
-      the same resolution.
     num_classes: `int` number of possible classes for image classification.
     data_format: `str` either "channels_first" for `[batch, channels, height,
         width]` or "channels_last for `[batch, height, width, channels]`.
@@ -151,64 +146,64 @@ def model_generator(num_classes, image_shape, data_format='NCHW'): #'channels_fi
     Model `function` that takes in `inputs` and `is_training` and returns the
     output `Tensor` of the ResNet model.
   """
-  class MCNN(object):
-    def __init__(self, image_shape, data_format):
-      self.image_shape = image_shape
-      self.data_format = data_format
+  def model(self, inputs, is_training):
+    """Creation of the model graph."""
+    if self.data_format == 'NCHW': #'channels_first':
+      images = tf.reshape(inputs, shape=[-1, 3, image_shape[0], image_shape[1]])
+    else:
+      images = tf.reshape(inputs, shape=[-1, image_shape[0], image_shape[1], 3])
 
-      def model(self, inputs, is_training):
-        """Creation of the model graph."""
-        if self.data_format == 'NCHW': #'channels_first':
-          images = tf.reshape(inputs, shape=[-1, 3, self.image_shape[0], self.image_shape[1]])#1024, 1280])
-        else:
-          images = tf.reshape(inputs, shape=[-1, self.image_shape[0], self.image_shape[1], 3])#1024, 1280, 3])
+    preconv_counter = 0
 
-        preconv_counter = 0
+    nIn = 3  # Number of input channels
 
-        nIn = 3  # Number of input channels
+    # If input images have shape [724, 724, 3], pad to make dimensions multiple of 16
+    # i.e. [724, 724, 3] to [768, 768, 3]
+    if image_shape[0] == 724 and image_shape[1] == 724:
+      kernel_size = [22, 22]
+      if self.data_format == 'NCHW':
+        images = tf.pad(images, [[0, 0], [0, 0], kernel_size, kernel_size], "CONSTANT")
+      else:
+        images = tf.pad(images, [[0, 0], kernel_size, kernel_size, [0, 0]], "CONSTANT")
 
-        # If input images have shape [724, 724, 3], pad to make dimensions multiple of 16
-        # i.e. [724, 724, 3] to [768, 768, 3]
-        if self.image_shape[0] == 724 and self.image_shape[1] == 724:
-          kernel_size = [22, 22]
-          if self.data_format == 'NCHW':
-            images = tf.pad(images, [[0, 0], [0, 0], kernel_size, kernel_size], "CONSTANT")
-          else:
-            images = tf.pad(images, [[0, 0], kernel_size, kernel_size, [0, 0]], "CONSTANT")
+    col1 = conv_pool(images, nIn, 16, 5, 5, 1, 1, 64, 64, 64, 64, 'SAME', True, 2, data_format)
+    col2 = pc_par_conv_pool('res_2', images, 2, 2, 2, 2, nIn, 16, 5, 5, 1, 1, 32, 32, 32, 32, 'SAME', True, 2, data_format, preconv_counter)
+    preconv_counter += 1
+    col3 = pc_par_conv_pool('res_4', images, 4, 4, 4, 4, nIn, 16, 5, 5, 1, 1, 16, 16, 16, 16, 'SAME', True, 2, data_format, preconv_counter)
+    preconv_counter += 1
+    col4 = pc_par_conv_pool('res_8', images, 8, 8, 8, 8, nIn, 32, 5, 5, 1, 1, 8, 8, 8, 8, 'SAME', True, 2, data_format, preconv_counter)
+    preconv_counter += 1
+    col5 = pc_par_conv_pool('res_16', images, 16, 16, 16, 16, nIn, 32, 5, 5, 1, 1, 4, 4, 4, 4, 'SAME', True, 2, data_format, preconv_counter)
+    preconv_counter += 1
+    col6 = pc_par_conv_pool('res_32', images, 32, 32, 32, 32, nIn, 32, 5, 5, 1, 1, 2, 2, 2, 2, 'SAME', True, 2, data_format, preconv_counter)
+    preconv_counter += 1
+    col7 = pc_par_conv_pool('res_64', images, 64, 64, 64, 64, nIn, 64, 5, 5, 1, 1, 1, 1, 1, 1, 'SAME', True, 2, data_format, preconv_counter)
 
-        col1 = conv_pool(images, nIn, 16, 5, 5, 1, 1, 64, 64, 64, 64, 'SAME', True, 2, data_format)
-        col2 = pc_par_conv_pool('res_2', images, 2, 2, 2, 2, nIn, 16, 5, 5, 1, 1, 32, 32, 32, 32, 'SAME', True, 2, data_format, preconv_counter)
-        preconv_counter += 1
-        col3 = pc_par_conv_pool('res_4', images, 4, 4, 4, 4, nIn, 16, 5, 5, 1, 1, 16, 16, 16, 16, 'SAME', True, 2, data_format, preconv_counter)
-        preconv_counter += 1
-        col4 = pc_par_conv_pool('res_8', images, 8, 8, 8, 8, nIn, 32, 5, 5, 1, 1, 8, 8, 8, 8, 'SAME', True, 2, data_format, preconv_counter)
-        preconv_counter += 1
-        col5 = pc_par_conv_pool('res_16', images, 16, 16, 16, 16, nIn, 32, 5, 5, 1, 1, 4, 4, 4, 4, 'SAME', True, 2, data_format, preconv_counter)
-        preconv_counter += 1
-        col6 = pc_par_conv_pool('res_32', images, 32, 32, 32, 32, nIn, 32, 5, 5, 1, 1, 2, 2, 2, 2, 'SAME', True, 2, data_format, preconv_counter)
-        preconv_counter += 1
-        col7 = pc_par_conv_pool('res_64', images, 64, 64, 64, 64, nIn, 64, 5, 5, 1, 1, 1, 1, 1, 1, 'SAME', True, 2, data_format, preconv_counter)
+    # mergedPool
+    if data_format == 'NCHW': #'channels_first':
+      col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 1)
+    else:
+      col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 3)
 
-        # mergedPool
-        if data_format == 'NCHW': #'channels_first':
-          col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 1)
-        else:
-          col_merge = tf.concat([col1, col2, col3, col4, col5, col6, col7], 3)
+    # mergedSummaryConv + relu-mergedSummaryConv
+    mergedSummaryConv = conv_kernel('mergedSummaryConv', col_merge, 208, 1024, 1, 1, 1, 1, 'SAME', data_format=data_format)
 
-        # mergedSummaryConv + relu-mergedSummaryConv
-        mergedSummaryConv = conv_kernel('mergedSummaryConv', col_merge, 208, 1024, 1, 1, 1, 1, 'SAME', data_format=data_format)
+    # poolMergedSummaryConv
+    poolMergedSummaryConv = max_pool_kernel('mergedSummaryConv', mergedSummaryConv, 2, 2, 2, 2, data_format=data_format)
 
-        # poolMergedSummaryConv
-        poolMergedSummaryConv = max_pool_kernel('mergedSummaryConv', mergedSummaryConv, 2, 2, 2, 2, data_format=data_format)
+    # ip0 in case of [724, 724, 3]
+    if image_shape[0] == 724 and image_shape[1] == 724:
+      resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 6 * 6])
+      ip0 = inner_product('ip0', resh1, 1024 * 6 * 6, 512)
+    else:
+      # ip0 in case of [1024, 1280, 3]
+      resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 10 * 8])
+      ip0 = inner_product('ip0', resh1, 1024 * 10 * 8, 512)
 
-        # ip0 + relulp0
-        resh1 = tf.reshape(poolMergedSummaryConv, [-1, 1024 * 6 * 6])#10 * 8])
-        ip0 = inner_product('ip0', resh1, 1024 * 6 * 6, 512)#10 * 8, 512)
-        ip3 = inner_product('ip3', ip0, 512, 13)
+    ip3 = inner_product('ip3', ip0, 512, 13)
+    return ip3
 
-        return ip3
-
-  return MCNN(image_shape, data_format).model
+  return model
 
 
 def mcnn(num_classes, image_shape, data_format='NCHW'): #'channels_first'):
