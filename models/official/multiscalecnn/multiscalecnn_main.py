@@ -359,14 +359,14 @@ def multiscalecnn_model_fn(features, labels, mode, params):
             summary.scalar('learning_rate', lr[0], step=gs)
             summary.scalar('current_epoch', ce[0], step=gs)
         #summary.scalar('labels_0', labels[0], step=gs)
-	    #summary.scalar('labels_1', labels[1], step=gs)
+        #summary.scalar('labels_1', labels[1], step=gs)
             #summary.scalar('labels_2', labels[2], step=gs)
-	    #summary.scalar('labels_3', labels[3], step=gs)
+        #summary.scalar('labels_3', labels[3], step=gs)
             #summary.scalar('labels_4', labels[4], step=gs)
-	    #summary.scalar('labels_5', labels[5], step=gs)
+        #summary.scalar('labels_5', labels[5], step=gs)
             #summary.scalar('labels_6', labels[6], step=gs)
-	    #summary.scalar('labels_7', labels[7], step=gs)
-	    return summary.all_summary_ops()
+        #summary.scalar('labels_7', labels[7], step=gs)
+        return summary.all_summary_ops()
 
       # To log the loss, current learning rate, and epoch for Tensorboard, the
       # summary op needs to be run on the host CPU via host_call. host_call
@@ -471,7 +471,7 @@ def main(unused_argv):
 
   hvd_bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
   examples_sec_hook = tpu_estimator.ExamplesPerSecondHook(int(FLAGS.train_batch_size/hvd.size()),every_n_steps=1)
-  if FLAGS.trace == True:
+  if FLAGS.trace == True and hvd.rank() == 0:
     profiler_hook = ProfilerHook(save_steps=1, output_dir=FLAGS.model_dir)
 
   assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
@@ -532,12 +532,14 @@ def main(unused_argv):
       multiscalecnn_classifier.train(input_fn=hci_train.input_fn, max_steps=FLAGS.train_steps)
       next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                             FLAGS.train_steps)
-      if FLAGS.trace == True:
-        multiscalecnn_classifier.train(
-            input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook, profiler_hook])
-      else:
-        multiscalecnn_classifier.train(
-            input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
+      hooks=[]
+      hooks.append(examples_sec_hook)
+      hooks.append(hvd_bcast_hook)
+      if FLAGS.trace == True and hvd.rank() == 0:
+        hooks.append(profiler_hook)
+      multiscalecnn_classifier.train(input_fn=hci_train.input_fn,
+                                     max_steps=next_checkpoint,
+                                     hooks=hooks)
     else:
       assert FLAGS.mode == 'train_and_eval'
       while current_step < FLAGS.train_steps:
@@ -545,13 +547,15 @@ def main(unused_argv):
         # At the end of training, a checkpoint will be written to --model_dir.
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
-        if FLAGS.trace == True:
-          multiscalecnn_classifier.train(
-              input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook, profiler_hook])
-        else:
-          multiscalecnn_classifier.train(
-              input_fn=hci_train.input_fn, max_steps=next_checkpoint,  hooks=[examples_sec_hook, hvd_bcast_hook])
-	current_step = next_checkpoint
+        hooks=[]
+        hooks.append(examples_sec_hook)
+        hooks.append(hvd_bcast_hook)
+        if FLAGS.trace == True and hvd.rank() == 0:
+          hooks.append(profiler_hook)
+        multiscalecnn_classifier.train(input_fn=hci_train.input_fn,
+                                       max_steps=next_checkpoint,
+                                       hooks=hooks)
+        current_step = next_checkpoint
         # Evaluate the model on the most recent model in --model_dir.
         # Since evaluation happens in batches of --eval_batch_size, some images
         # may be consistently excluded modulo the batch size.

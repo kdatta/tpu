@@ -146,9 +146,9 @@ def model_generator(num_classes, image_shape, data_format='NCHW'): #'channels_fi
     Model `function` that takes in `inputs` and `is_training` and returns the
     output `Tensor` of the ResNet model.
   """
-  def model(self, inputs, is_training):
+  def model(inputs, is_training):
     """Creation of the model graph."""
-    if self.data_format == 'NCHW': #'channels_first':
+    if data_format == 'NCHW': #'channels_first':
       images = tf.reshape(inputs, shape=[-1, 3, image_shape[0], image_shape[1]])
     else:
       images = tf.reshape(inputs, shape=[-1, image_shape[0], image_shape[1], 3])
@@ -161,7 +161,7 @@ def model_generator(num_classes, image_shape, data_format='NCHW'): #'channels_fi
     # i.e. [724, 724, 3] to [768, 768, 3]
     if image_shape[0] == 724 and image_shape[1] == 724:
       kernel_size = [22, 22]
-      if self.data_format == 'NCHW':
+      if data_format == 'NCHW':
         images = tf.pad(images, [[0, 0], [0, 0], kernel_size, kernel_size], "CONSTANT")
       else:
         images = tf.pad(images, [[0, 0], kernel_size, kernel_size, [0, 0]], "CONSTANT")
@@ -209,7 +209,7 @@ def model_generator(num_classes, image_shape, data_format='NCHW'): #'channels_fi
 def mcnn(num_classes, image_shape, data_format='NCHW'): #'channels_first'):
   """Returns the ResNet model for a given size and number of output classes."""
   
-  return model_generator(num_classes, data_format, image_shape)
+  return model_generator(num_classes, image_shape, data_format)
 
 def loss(logits, labels):
   sparse_labels = tf.reshape(labels, [8, 1])
